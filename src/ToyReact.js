@@ -4,15 +4,59 @@ class ElementWrapper {
     }
 
     appendChild(vchild) {
-        vchild.mountTo(this.root)
+        let range = document.createRange();
+        if (this.root.children.length) {
+            range.setStartAfter(this.root.lastChild);
+            range.setEndAfter(this.root.lastChild)
+        } else {
+            range.setStart(this.root, 0)
+            range.setEnd(this.root, 0)
+        }
+        vchild.mountTo(range)
     }
 
     setAttribute(name, value) {
+        if (name.match(/^on([\s\S]+)$/)) {
+            let eventName = RegExp.$1.replace(/^[\s\S]/, s => s.toLowerCase());
+            this.root.addEventListener(eventName, value);
+        }
+        if (name === 'className') {
+            name = 'class';
+        }
         this.root.setAttribute(name, value)
     }
 
-    mountTo(parent) {
-        parent.appendChild(this.render());
+    mountTo(range) {
+        this.range = range;
+        range.insertNode(this.render())
+    }
+
+    setState(state) {
+        console.log(state)
+        let merge = (oldState, newState) => {
+            for (let i of oldState) {
+                if (typeof newState[i] === 'object') {
+                    if (typeof oldState[i] !== 'object') {
+                        oldState[i] = {}
+                    }
+                    if (Array.isArray(newState[i])){
+                        oldState[i] = newState[i];
+                    }
+                    merge(oldState[i], newState[i])
+                } else {
+                    oldState[i] = newState[i]
+                }
+            }
+        }
+        if (!this.state) {
+            this.state = {}
+        }
+        merge(this.state, state)
+        this.update();
+    }
+
+    update() {
+
     }
 
     render() {
@@ -22,12 +66,64 @@ class ElementWrapper {
 
 export class Component {
 
-    setAttribute(name, value) {
-        this[name] = value;
+    constructor() {
+        this.children = [];
+        this.props = Object.create(null)
     }
 
-    mountTo(parent) {
-        parent.appendChild(this.render());
+    appendChildren(child) {
+        this.children.push(child)
+    }
+
+    setAttribute(name, value) {
+        this[name] = value;
+        this.props[name] = value;
+    }
+
+    mountTo(range) {
+        this.range = range;
+        this.update();
+        // range.insertNode(this.render())
+    }
+
+    setState(state) {
+        let merge = (oldState, newState) => {
+            for (let i in newState) {
+                if (typeof newState[i] === 'object') {
+                    if (typeof oldState[i] !== 'object') {
+                        oldState[i] = {}
+                    }
+                    if (Array.isArray(newState[i])){
+                        oldState[i] = newState[i];
+                    }
+                    merge(oldState[i], newState[i])
+                } else {
+                    oldState[i] = newState[i]
+                }
+            }
+        }
+        if (!this.state && state) {
+            this.state = {}
+        }
+        merge(this.state, state)
+        this.update();
+    }
+
+    update() {
+        let placeholder = document.createElement('placeholder');
+        let range = document.createRange();
+        range.setStart(this.range.endContainer, this.range.endOffset);
+        range.setEnd(this.range.endContainer, this.range.endOffset);
+        range.insertNode(placeholder);
+
+        this.range.deleteContents();
+
+        let vdom = this.render();
+        vdom.mountTo(this.range);
+    }
+
+    render() {
+
     }
 }
 
@@ -36,8 +132,9 @@ class TextWrapper {
         this.vdom = document.createTextNode(str)
     }
 
-    mountTo(parent) {
-        parent.appendChild(this.render());
+    mountTo(range) {
+        range.deleteContents();
+        range.insertNode(this.render());
     }
 
     render() {
@@ -79,7 +176,15 @@ export let ToyReact = {
     },
 
     render(compent, element) {
-        compent.mountTo(element)
+        let range = document.createRange();
+        if (element.children.length) {
+            range.setStartAfter(element.lastChild);
+            range.setEndAfter(element.lastChild)
+        } else {
+            range.setStart(element, 0)
+            range.setEnd(element, 0)
+        }
+        compent.mountTo(range)
     }
 }
 
