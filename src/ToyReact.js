@@ -1,22 +1,26 @@
 class ElementWrapper {
     constructor(type) {
-        this.root = document.createElement(type)
+        this.type = type;
+        this.children = [];
+        this.range = null;
+        this.props = Object.create(null)
     }
 
-    appendChild(vchild) {
-        let range = document.createRange();
+    appendChild(child) {
+        /*let range = document.createRange();
         if (this.root.children.length) {
             range.setStartAfter(this.root.lastChild);
             range.setEndAfter(this.root.lastChild)
         } else {
             range.setStart(this.root, 0)
             range.setEnd(this.root, 0)
-        }
-        vchild.mountTo(range)
+        }*/
+        this.children.push(child);
+        // vchild.mountTo(range)
     }
 
     setAttribute(name, value) {
-        if (name.match(/^on([\s\S]+)$/)) {
+        /*if (name.match(/^on([\s\S]+)$/)) {
             let eventName = RegExp.$1.replace(/^[\s\S]/, s => s.toLowerCase());
             this.root.addEventListener(eventName, value);
         }
@@ -24,11 +28,37 @@ class ElementWrapper {
             name = 'class';
         }
         this.root.setAttribute(name, value)
+         */
+        this.props[name] = value;
     }
 
     mountTo(range) {
         this.range = range;
-        range.insertNode(this.render())
+        let element = document.createElement(this.render())
+        for (let name in this.props) {
+            let value = this.props[name];
+            if (name.match(/^on([\s\S]+)$/)) {
+                let eventName = RegExp.$1.replace(/^[\s\S]/, s => s.toLowerCase());
+                element.addEventListener(eventName, value);
+            }
+            if (name === 'className') {
+                name = 'class';
+            }
+            element.setAttribute(name, value)
+        }
+        for (let child of this.children) {
+            let range = document.createRange()
+            if (element.children.length) {
+                range.setStartAfter(element.lastChild);
+                range.setEndAfter(element.lastChild)
+            } else {
+                range.setStart(element, 0)
+                range.setEnd(element, 0)
+            }
+            child.mountTo(range)
+        }
+        range.deleteContents();
+        range.insertNode(element)
     }
 
     setState(state) {
@@ -39,7 +69,7 @@ class ElementWrapper {
                     if (typeof oldState[i] !== 'object') {
                         oldState[i] = {}
                     }
-                    if (Array.isArray(newState[i])){
+                    if (Array.isArray(newState[i])) {
                         oldState[i] = newState[i];
                     }
                     merge(oldState[i], newState[i])
@@ -60,7 +90,7 @@ class ElementWrapper {
     }
 
     render() {
-        return this.root;
+        return this.type;
     }
 }
 
@@ -69,6 +99,11 @@ export class Component {
     constructor() {
         this.children = [];
         this.props = Object.create(null)
+        this.vdom = null;
+    }
+
+    get type() {
+        return this.constructor.name;
     }
 
     appendChildren(child) {
@@ -83,7 +118,6 @@ export class Component {
     mountTo(range) {
         this.range = range;
         this.update();
-        // range.insertNode(this.render())
     }
 
     setState(state) {
@@ -93,7 +127,7 @@ export class Component {
                     if (typeof oldState[i] !== 'object') {
                         oldState[i] = {}
                     }
-                    if (Array.isArray(newState[i])){
+                    if (Array.isArray(newState[i])) {
                         oldState[i] = newState[i];
                     }
                     merge(oldState[i], newState[i])
@@ -110,16 +144,62 @@ export class Component {
     }
 
     update() {
-        let placeholder = document.createElement('placeholder');
-        let range = document.createRange();
-        range.setStart(this.range.endContainer, this.range.endOffset);
-        range.setEnd(this.range.endContainer, this.range.endOffset);
-        range.insertNode(placeholder);
-
-        this.range.deleteContents();
-
         let vdom = this.render();
-        vdom.mountTo(this.range);
+        if (this.vdom) {
+            // diff 算法比对
+            let isSameNode = (oldNode, newNode) => {
+                if (oldNode.type !== newNode.type) {
+                    return false;
+                }
+                for (let name in oldNode.props) {
+                    if (typeof oldNode[name] === 'function'
+                        && typeof newNode[name] === 'function'
+                        && oldNode[name].toString() === newNode[name].toString())
+                        continue;
+                    if (typeof oldNode[name] === 'object'
+                        && typeof newNode[name] === 'object'
+                        && JSON.stringify(oldNode[name]) === JSON.stringify(newNode[name]))
+                        continue;
+                    if (oldNode[name] !== newNode[name]) {
+                        console.log(name,oldNode[name],newNode[name])
+                        return false;
+                    }
+                }
+                return Object.keys(oldNode.props).length === Object.keys(newNode.props).length;
+            }
+
+            let isSameTree = (oldTree, newTree) => {
+                if (!isSameNode(oldTree, newTree)) {
+                    return false;
+                }
+                if (oldTree.children.length !== newTree.children.length) {
+                    return false;
+                }
+                for (let i = 0; i < oldTree.children.length; i++) {
+                    if (!isSameTree(oldTree.children[i], newTree.children[i])) {
+                        return false
+                    }
+                }
+                return true;
+            }
+
+            let replace = (newVdom, oldVdom) => {
+                if (isSameTree(newVdom, oldVdom)) {
+                    return;
+                }
+                if (!isSameNode(oldVdom, newVdom)) {
+                    newVdom.mountTo(oldVdom.range);
+                } else {
+                    for (let i = 0; i < newVdom.children.length; i++) {
+                        replace(newVdom.children[i], oldVdom.children[i]);
+                    }
+                }
+            }
+            replace(vdom,this.vdom);
+        } else {
+            vdom.mountTo(this.range);
+        }
+        this.vdom = vdom;
     }
 
     render() {
@@ -129,10 +209,14 @@ export class Component {
 
 class TextWrapper {
     constructor(str) {
+        this.children = [];
+        this.props = Object.create(null)
+        this.type = '#text';
         this.vdom = document.createTextNode(str)
     }
 
     mountTo(range) {
+        this.range = range;
         range.deleteContents();
         range.insertNode(this.render());
     }
