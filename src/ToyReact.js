@@ -1,6 +1,9 @@
+let childrenSymbol = Symbol("children")
+
 class ElementWrapper {
     constructor(type) {
         this.type = type;
+        this[childrenSymbol] = [];
         this.children = [];
         this.range = null;
         this.props = Object.create(null)
@@ -15,8 +18,13 @@ class ElementWrapper {
             range.setStart(this.root, 0)
             range.setEnd(this.root, 0)
         }*/
-        this.children.push(child);
+        this.children.push(child.vdom);
+        this[childrenSymbol].push(child)
         // vchild.mountTo(range)
+    }
+
+    get vdom(){
+        return this;
     }
 
     setAttribute(name, value) {
@@ -34,6 +42,13 @@ class ElementWrapper {
 
     mountTo(range) {
         this.range = range;
+        let placeholder = document.createComment("placeholder")
+        let endRange = document.createRange();
+        endRange.setStart(range.endContainer,range.endOffset);
+        endRange.setEnd(range.endContainer,range.endOffset)
+        endRange.insertNode(placeholder)
+
+        range.deleteContents();
         let element = document.createElement(this.render())
         for (let name in this.props) {
             let value = this.props[name];
@@ -57,7 +72,6 @@ class ElementWrapper {
             }
             child.mountTo(range)
         }
-        range.deleteContents();
         range.insertNode(element)
     }
 
@@ -99,14 +113,13 @@ export class Component {
     constructor() {
         this.children = [];
         this.props = Object.create(null)
-        this.vdom = null;
     }
 
     get type() {
         return this.constructor.name;
     }
 
-    appendChildren(child) {
+    appendChild(child) {
         this.children.push(child)
     }
 
@@ -118,6 +131,10 @@ export class Component {
     mountTo(range) {
         this.range = range;
         this.update();
+    }
+
+    get vdom(){
+        return this.render().vdom;
     }
 
     setState(state) {
@@ -144,27 +161,28 @@ export class Component {
     }
 
     update() {
-        let vdom = this.render();
-        if (this.vdom) {
+        let vdom = this.vdom;
+        if (this.oldVdom) {
             // diff 算法比对
             let isSameNode = (oldNode, newNode) => {
                 if (oldNode.type !== newNode.type) {
                     return false;
                 }
                 for (let name in oldNode.props) {
-                    if (typeof oldNode[name] === 'function'
-                        && typeof newNode[name] === 'function'
-                        && oldNode[name].toString() === newNode[name].toString())
+                    // if (typeof oldNode.props[name] === 'function'
+                    //     && typeof newNode.props[name] === 'function'
+                    //     && oldNode.props[name].toString() === newNode.props[name].toString())
+                    //     continue;
+                    if (typeof oldNode.props[name] === 'object'
+                        && typeof newNode.props[name] === 'object'
+                        && JSON.stringify(oldNode.props[name]) === JSON.stringify(newNode.props[name]))
                         continue;
-                    if (typeof oldNode[name] === 'object'
-                        && typeof newNode[name] === 'object'
-                        && JSON.stringify(oldNode[name]) === JSON.stringify(newNode[name]))
-                        continue;
-                    if (oldNode[name] !== newNode[name]) {
-                        console.log(name,oldNode[name],newNode[name])
+                    if (oldNode.props[name] !== newNode.props[name]) {
+                        console.log('a',name,oldNode.props[name],newNode.props[name])
                         return false;
                     }
                 }
+
                 return Object.keys(oldNode.props).length === Object.keys(newNode.props).length;
             }
 
@@ -188,6 +206,7 @@ export class Component {
                     return;
                 }
                 if (!isSameNode(oldVdom, newVdom)) {
+                    console.log('replace',oldVdom,newVdom)
                     newVdom.mountTo(oldVdom.range);
                 } else {
                     for (let i = 0; i < newVdom.children.length; i++) {
@@ -195,11 +214,12 @@ export class Component {
                     }
                 }
             }
-            replace(vdom,this.vdom);
+            replace(vdom,this.oldVdom);
         } else {
             vdom.mountTo(this.range);
         }
-        this.vdom = vdom;
+        this.oldVdom = vdom;
+        console.log(vdom)
     }
 
     render() {
@@ -211,8 +231,8 @@ class TextWrapper {
     constructor(str) {
         this.children = [];
         this.props = Object.create(null)
-        this.type = '#text';
-        this.vdom = document.createTextNode(str)
+        this.type = '#text_' + str;
+        this.root = document.createTextNode(str)
     }
 
     mountTo(range) {
@@ -221,8 +241,12 @@ class TextWrapper {
         range.insertNode(this.render());
     }
 
+    get vdom() {
+        return this;
+    }
+
     render() {
-        return this.vdom;
+        return this.root;
     }
 }
 
